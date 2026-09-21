@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProofPilotAI Dashboard</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            bg: '#090D16',
+                            surface: '#111827',
+                            border: '#1E293B',
+                            primary: '#06B6D4',
+                            secondary: '#3B82F6',
+                            success: '#10B981',
+                            warning: '#F59E0B',
+                            danger: '#EF4444'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body { background-color: #090D16; color: #e2e8f0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid #1E293B;
+        }
+        .console-scrollbar::-webkit-scrollbar { width: 6px; }
+        .console-scrollbar::-webkit-scrollbar-track { background: #0f172a; }
+        .console-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    </style>
+</head>
+<body class="antialiased h-screen overflow-hidden flex flex-col m-0 p-0">
+    <div id="root" class="h-full w-full"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Mock Data Scenarios matching your Python logic
+        const SCENARIOS = {
+            SUCCESS: {
+                name: "Success Path Demo",
+                goal: "Execute SQL migration and verify data integrity",
+                logs: [
+                    { time: "00:00.1", type: "INFO", text: "Starting new workflow: Execute SQL migration..." },
+                    { time: "00:00.5", type: "EXEC", text: "Member 1 (Planner): Decomposed into 2 atomic steps." },
+                    { time: "00:01.2", type: "EXEC", text: "Step 1: Running bash_tool `flyway migrate`..." },
+                    { time: "00:03.0", type: "EXEC", text: "Step 1 completed. Exit code: 0." },
+                    { time: "00:03.1", type: "VERIFY", text: "Member 2 (Evidence): Minted artifact hash: 9f86d081..." },
+                    { time: "00:03.5", type: "VERIFY", text: "Member 3 (Verifier): Checking FileChecksumRule -> PASS" },
+                    { time: "00:04.0", type: "EXEC", text: "Step 2: Verifying row counts via HTTP..." },
+                    { time: "00:04.5", type: "EXEC", text: "Step 2 completed. Status: 200 OK." },
+                    { time: "00:04.6", type: "VERIFY", text: "Member 2 (Evidence): Minted artifact hash: 4b227777..." },
+                    { time: "00:05.1", type: "VERIFY", text: "Member 3 (Verifier): Checking HTTPStatusRule -> PASS" },
+                    { time: "00:05.5", type: "INFO", text: "Workflow completed successfully." },
+                ],
+                evidence: [
+                    { id: "art-1", type: "FILE_CHECKSUM", status: "VALIDATED", summary: "flyway.log hash matched." },
+                    { id: "art-2", type: "HTTP_RESPONSE", status: "VALIDATED", summary: "200 OK, JSON schema matched." }
+                ],
+                rules: [
+                    { name: "Rule 101: Exit Code == 0", status: "PASSED" },
+                    { name: "Rule 102: Log Missing 'ERROR'", status: "PASSED" },
+                    { name: "Rule 201: HTTP 200 OK", status: "PASSED" }
+                ],
+                recovery: null,
+                metrics: { status: "SUCCESS", steps: "2 / 2", retries: "0 / 3", integrity: "100%" },
+                activeNode: 4
+            },
+            RECOVERY: {
+                name: "Failure & Recovery Demo",
+                goal: "Fetch remote configuration and apply to system.",
+                logs: [
+                    { time: "00:00.1", type: "INFO", text: "Starting new workflow..." },
+                    { time: "00:00.5", type: "EXEC", text: "Member 1 (Planner): Planning API fetch." },
+                    { time: "00:01.2", type: "EXEC", text: "Step 1: HTTP GET /api/config..." },
+                    { time: "00:02.0", type: "EXEC", text: "Step 1 completed. Status: 503." },
+                    { time: "00:02.1", type: "VERIFY", text: "Member 3 (Verifier): Checking HTTPStatusRule -> FAIL (Expected 200, got 503)" },
+                    { time: "00:02.5", type: "RECOVERY", text: "Member 4 (Healer): Intercepted failure. Retry count 1/3." },
+                    { time: "00:03.0", type: "RECOVERY", text: "Strategy Selected: RETRY_STEP (Transient 503 error)." },
+                    { time: "00:04.0", type: "EXEC", text: "Step 1 (Retry): HTTP GET /api/config..." },
+                    { time: "00:04.8", type: "EXEC", text: "Step 1 completed. Status: 200 OK." },
+                    { time: "00:05.1", type: "VERIFY", text: "Member 3 (Verifier): Checking HTTPStatusRule -> PASS" },
+                    { time: "00:05.5", type: "INFO", text: "Workflow completed successfully after recovery." }
+                ],
+                evidence: [
+                    { id: "art-1", type: "HTTP_RESPONSE", status: "INVALID", summary: "503 Service Unavailable" },
+                    { id: "art-2", type: "HTTP_RESPONSE", status: "VALIDATED", summary: "200 OK, fetched payload." }
+                ],
+                rules: [
+                    { name: "Rule 101: HTTP 200 OK", status: "FAILED", prev: true },
+                    { name: "Rule 101: HTTP 200 OK", status: "PASSED" }
+                ],
+                recovery: {
+                    reason: "Status code 503 != expected 200.",
+                    count: 1,
+                    strategy: "RETRY_STEP",
+                    mitigation: "Waiting 1000ms exponential backoff before retry."
+                },
+                metrics: { status: "SUCCESS (HEALED)", steps: "1 / 1", retries: "1 / 3", integrity: "100%" },
+                activeNode: 4
+            },
+            MAX_RETRY: {
+                name: "Max-Retry Boundary Test",
+                goal: "Connect to legacy irrecoverable database.",
+                logs: [
+                    { time: "00:00.1", type: "INFO", text: "Starting new workflow..." },
+                    { time: "00:01.0", type: "EXEC", text: "Step 1: DB Connection..." },
+                    { time: "00:01.5", type: "EXEC", text: "Step 1 completed. Exit code: 1." },
+                    { time: "00:01.6", type: "VERIFY", text: "Member 3 (Verifier): FAIL" },
+                    { time: "00:02.0", type: "RECOVERY", text: "Member 4 (Healer): Retry 1/3." },
+                    { time: "00:03.0", type: "EXEC", text: "Step 1 (Retry): DB Connection..." },
+                    { time: "00:03.5", type: "EXEC", text: "Step 1 completed. Exit code: 1." },
+                    { time: "00:03.6", type: "VERIFY", text: "Member 3 (Verifier): FAIL" },
+                    { time: "00:04.0", type: "RECOVERY", text: "Member 4 (Healer): Retry 2/3." },
+                    { time: "00:05.0", type: "EXEC", text: "Step 1 (Retry 2): DB Connection..." },
+                    { time: "00:05.5", type: "EXEC", text: "Step 1 completed. Exit code: 1." },
+                    { time: "00:05.6", type: "VERIFY", text: "Member 3 (Verifier): FAIL" },
+                    { time: "00:06.0", type: "RECOVERY", text: "Member 4 (Healer): Max retries (3/3) exceeded." },
+                    { time: "00:06.1", type: "RECOVERY", text: "Strategy: ABORT_HALT. Runaway loop prevented." },
+                    { time: "00:06.5", type: "INFO", text: "Execution terminated safely." }
+                ],
+                evidence: [
+                    { id: "art-1", type: "PROCESS_EXIT_CODE", status: "INVALID", summary: "Exit Code 1" },
+                    { id: "art-2", type: "PROCESS_EXIT_CODE", status: "INVALID", summary: "Exit Code 1" },
+                    { id: "art-3", type: "PROCESS_EXIT_CODE", status: "INVALID", summary: "Exit Code 1" }
+                ],
+                rules: [
+                    { name: "Rule 101: Exit Code == 0", status: "FAILED" }
+                ],
+                recovery: {
+                    reason: "Repeated timeout/crash on DB socket.",
+                    count: 3,
+                    strategy: "ABORT_HALT",
+                    mitigation: "Plan marked as SYSTEM_ERROR. Halting execution."
+                },
+                metrics: { status: "FAILED (ABORTED)", steps: "0 / 1", retries: "3 / 3", integrity: "0%" },
+                activeNode: 4
+            }
+        };
+
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const iconRef = useRef(null);
+            useEffect(() => {
+                if (iconRef.current) {
+                    iconRef.current.innerHTML = "";
+                    const i = document.createElement("i");
+                    i.setAttribute("data-lucide", name);
+                    iconRef.current.appendChild(i);
+                    lucide.createIcons({ root: iconRef.current });
+                }
+            }, [name]);
+            return <span ref={iconRef} style={{ width: size, height: size }} className={`inline-flex items-center justify-center ${className}`}></span>;
+        };
+
+        const Dashboard = () => {
+            const [activeScenario, setActiveScenario] = useState("SUCCESS");
+            const [isPlaying, setIsPlaying] = useState(false);
+            const [currentLogIndex, setCurrentLogIndex] = useState(0);
+            const [customGoal, setCustomGoal] = useState(SCENARIOS.SUCCESS.goal);
+            
+            const scenario = SCENARIOS[activeScenario];
+
+            useEffect(() => {
+                if (isPlaying && currentLogIndex < scenario.logs.length) {
+                    const timer = setTimeout(() => {
+                        setCurrentLogIndex(prev => prev + 1);
+                    }, 400); 
+                    return () => clearTimeout(timer);
+                } else if (isPlaying && currentLogIndex >= scenario.logs.length) {
+                    setIsPlaying(false);
+                }
+            }, [isPlaying, currentLogIndex, scenario.logs.length]);
+
+            const handleStart = () => {
+                setCurrentLogIndex(0);
+                setIsPlaying(true);
+            };
+
+            const handleReset = () => {
+                setCurrentLogIndex(0);
+                setIsPlaying(false);
+            };
+
+            const handleGoalChange = (e) => {
+                const val = e.target.value;
+                setCustomGoal(val);
+                
+                const lowerVal = val.toLowerCase();
+                let detected = "SUCCESS";
+                
+                // Keywords mapped to Failure & Recovery Demo
+                if (/(fail|timeout|unavailable|rate limit|503|recover|error|salesforce|remote|api|curl|download|fetch user|sync)/.test(lowerVal)) {
+                    detected = "RECOVERY";
+                }
+                
+                // Keywords mapped to Max-Retry Boundary Test
+                if (/(legacy|corrupted|permanently|abort|max retry|irrecoverable|hard|db2|kubernetes|scrape|on-premise)/.test(lowerVal)) {
+                    detected = "MAX_RETRY";
+                }
+                
+                if (detected !== activeScenario) {
+                    setActiveScenario(detected);
+                    setCurrentLogIndex(0);
+                    setIsPlaying(false);
+                }
+            };
+
+            const displayedLogs = scenario.logs.slice(0, currentLogIndex);
+            
+            let activeNode = 1;
+            const latestLog = displayedLogs[displayedLogs.length - 1];
+            if (latestLog) {
+                if (latestLog.type === 'EXEC') activeNode = 1;
+                else if (latestLog.text.includes("Evidence")) activeNode = 2;
+                else if (latestLog.type === 'VERIFY') activeNode = 3;
+                else if (latestLog.type === 'RECOVERY') activeNode = 4;
+            }
+            if (currentLogIndex === scenario.logs.length) activeNode = 0; 
+
+            const showEvidence = currentLogIndex > 0 && currentLogIndex > scenario.logs.findIndex(l => l.text.includes("Evidence") || l.text.includes("FAIL"));
+            const showRules = currentLogIndex > 0 && currentLogIndex > scenario.logs.findIndex(l => l.type === 'VERIFY');
+            const showRecovery = currentLogIndex > 0 && currentLogIndex > scenario.logs.findIndex(l => l.type === 'RECOVERY') && scenario.recovery;
+
+            return (
+                <div className="h-full w-full flex flex-col text-slate-200">
+                    {/* Header */}
+                    <header className="h-16 glass-panel border-b flex items-center justify-between px-6 shrink-0 z-10">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-brand-primary/20 border border-brand-primary/50 flex items-center justify-center">
+                                <Icon name="bot" className="text-brand-primary" />
+                            </div>
+                            <h1 className="text-xl font-bold tracking-tight text-white">ProofPilot<span className="text-brand-primary">AI</span></h1>
+                            <div className="ml-6 px-3 py-1 rounded-full bg-brand-success/10 border border-brand-success/20 flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full bg-brand-success animate-pulse"></div>
+                                <span className="text-xs font-medium text-brand-success">System Nominal | Gemini Connected</span>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <select 
+                                className="bg-brand-surface border border-brand-border rounded-md text-sm px-3 py-1.5 focus:outline-none focus:border-brand-primary"
+                                value={activeScenario}
+                                onChange={(e) => { 
+                                    setActiveScenario(e.target.value); 
+                                    setCustomGoal(SCENARIOS[e.target.value].goal);
+                                    handleReset(); 
+                                }}
+                            >
+                                <option value="SUCCESS">Success Path Demo</option>
+                                <option value="RECOVERY">Failure & Recovery Demo</option>
+                                <option value="MAX_RETRY">Max-Retry Boundary Test</option>
+                            </select>
+                            <button onClick={handleReset} className="px-4 py-1.5 text-sm font-medium text-slate-300 hover:text-white transition-colors">
+                                Reset
+                            </button>
+                            <button onClick={handleStart} disabled={isPlaying} className="px-4 py-1.5 text-sm font-medium bg-brand-primary text-brand-bg rounded-md hover:bg-cyan-400 transition-colors disabled:opacity-50 flex items-center gap-2 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
+                                <Icon name={isPlaying ? "loader-2" : "play"} size={16} className={isPlaying ? "animate-spin" : ""} />
+                                {isPlaying ? "Running..." : "Start Workflow"}
+                            </button>
+                        </div>
+                    </header>
+
+                    {/* Stepper */}
+                    <div className="h-24 glass-panel border-b flex items-center justify-center px-10 shrink-0">
+                        <div className="flex items-center w-full max-w-4xl justify-between relative">
+                            <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-800 -translate-y-1/2 z-0"></div>
+                            
+                            {[
+                                { id: 1, name: "Planner & Exec", desc: "Member 1", icon: "cpu" },
+                                { id: 2, name: "Evidence Vault", desc: "Member 2", icon: "database" },
+                                { id: 3, name: "Rule Verifier", desc: "Member 3", icon: "shield-check" },
+                                { id: 4, name: "Healer", desc: "Member 4", icon: "activity" }
+                            ].map((step, idx) => (
+                                <div key={step.id} className="relative z-10 flex flex-col items-center gap-2">
+                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center border-2 transition-all duration-300 ${
+                                        activeNode === step.id ? 'bg-brand-primary/20 border-brand-primary shadow-[0_0_15px_rgba(6,182,212,0.5)]' : 
+                                        activeNode === 0 ? 'bg-brand-surface border-slate-600 text-slate-400' :
+                                        'bg-brand-bg border-slate-700 text-slate-500'
+                                    }`}>
+                                        <Icon name={step.icon} className={activeNode === step.id ? 'text-brand-primary' : ''} />
+                                    </div>
+                                    <div className="text-center">
+                                        <div className={`text-sm font-semibold ${activeNode === step.id ? 'text-white' : 'text-slate-400'}`}>{step.name}</div>
+                                        <div className="text-xs text-slate-500">{step.desc}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Main Content */}
+                    <div className="flex-1 flex overflow-hidden">
+                        {/* Left Panel */}
+                        <div className="w-1/2 border-r border-brand-border flex flex-col bg-brand-bg relative">
+                            <div className="absolute right-0 top-0 w-[1px] h-full bg-gradient-to-b from-brand-border via-brand-primary/20 to-brand-border"></div>
+                            <div className="p-4 border-b border-brand-border z-10">
+                                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 block">Task Goal Input</label>
+                                <div className="p-3 bg-brand-surface border border-slate-700 rounded-lg text-sm text-slate-200 flex items-center gap-3 focus-within:border-brand-primary focus-within:ring-1 focus-within:ring-brand-primary transition-all">
+                                    <Icon name="terminal-square" className="text-brand-primary shrink-0" />
+                                    <input 
+                                        type="text" 
+                                        className="bg-transparent border-none outline-none w-full font-mono text-slate-200 disabled:opacity-50" 
+                                        value={customGoal} 
+                                        onChange={handleGoalChange} 
+                                        disabled={isPlaying} 
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex-1 flex flex-col p-4 overflow-hidden z-10">
+                                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 block flex items-center justify-between">
+                                    <span>Live Execution Stream</span>
+                                    <span className="flex items-center gap-1 text-brand-primary"><Icon name="radio" size={14} className={isPlaying ? "animate-pulse" : ""} /> Live</span>
+                                </label>
+                                <div className="flex-1 bg-[#0f172a] border border-slate-800 rounded-lg p-4 font-mono text-xs overflow-y-auto console-scrollbar shadow-inner">
+                                    {displayedLogs.map((log, i) => (
+                                        <div key={i} className="mb-2 leading-relaxed flex gap-3">
+                                            <span className="text-slate-500 shrink-0">[{log.time}]</span>
+                                            <span className={`shrink-0 w-20 font-semibold ${
+                                                log.type === 'INFO' ? 'text-brand-secondary' :
+                                                log.type === 'EXEC' ? 'text-purple-400' :
+                                                log.type === 'VERIFY' ? 'text-brand-success' :
+                                                'text-brand-warning'
+                                            }`}>[{log.type}]</span>
+                                            <span className="text-slate-300 break-words">{log.text}</span>
+                                        </div>
+                                    ))}
+                                    {isPlaying && (
+                                        <div className="flex gap-3 animate-pulse">
+                                            <span className="text-slate-500">[--:--.-]</span>
+                                            <span className="text-slate-400 w-20">[...]</span>
+                                            <span className="text-slate-500">Processing...</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Right Panel */}
+                        <div className="w-1/2 flex flex-col bg-brand-bg overflow-y-auto console-scrollbar p-4 space-y-4">
+                            
+                            {/* Evidence Vault */}
+                            <div className={`transition-all duration-500 ${showEvidence ? 'opacity-100 translate-y-0' : 'opacity-30 translate-y-4'}`}>
+                                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                    <Icon name="database" size={14} /> Member 2: Evidence Vault
+                                </h3>
+                                <div className="space-y-2">
+                                    {showEvidence ? scenario.evidence.map((ev, i) => (
+                                        <div key={i} className="p-3 bg-brand-surface border border-slate-800 rounded-lg flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded bg-slate-800 flex items-center justify-center">
+                                                    <Icon name="file-json" size={16} className="text-brand-secondary" />
+                                                </div>
+                                                <div>
+                                                    <div className="text-sm font-medium text-slate-200">{ev.type}</div>
+                                                    <div className="text-xs text-slate-500 font-mono mt-0.5">{ev.summary}</div>
+                                                </div>
+                                            </div>
+                                            <span className={`px-2 py-1 text-[10px] font-bold rounded-md tracking-wider ${
+                                                ev.status === 'VALIDATED' ? 'bg-brand-success/10 text-brand-success border border-brand-success/20' : 
+                                                'bg-brand-danger/10 text-brand-danger border border-brand-danger/20'
+                                            }`}>
+                                                {ev.status}
+                                            </span>
+                                        </div>
+                                    )) : <div className="text-sm text-slate-500 italic p-4 border border-dashed border-slate-700 rounded-lg text-center">Awaiting execution proofs...</div>}
+                                </div>
+                            </div>
+
+                            {/* Verification Rules */}
+                            <div className={`transition-all duration-500 ${showRules ? 'opacity-100 translate-y-0' : 'opacity-30 translate-y-4'}`}>
+                                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2 mt-4">
+                                    <Icon name="shield-check" size={14} /> Member 3: Verification Matrix
+                                </h3>
+                                <div className="bg-brand-surface border border-slate-800 rounded-lg p-1">
+                                    {showRules ? scenario.rules.map((rule, i) => (
+                                        <div key={i} className="flex items-center justify-between p-2.5 border-b border-slate-800/50 last:border-0">
+                                            <span className={`text-sm ${rule.prev ? 'text-slate-500 line-through' : 'text-slate-300'}`}>{rule.name}</span>
+                                            {rule.status === 'PASSED' ? (
+                                                <Icon name="check-circle-2" size={16} className="text-brand-success" />
+                                            ) : (
+                                                <Icon name="x-circle" size={16} className="text-brand-danger" />
+                                            )}
+                                        </div>
+                                    )) : <div className="text-sm text-slate-500 p-3 text-center italic">Awaiting rules evaluation...</div>}
+                                </div>
+                            </div>
+
+                            {/* Recovery Panel */}
+                            {scenario.recovery && (
+                                <div className={`transition-all duration-500 ${showRecovery ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
+                                    <h3 className="text-xs font-semibold text-brand-warning uppercase tracking-wider mb-3 flex items-center gap-2 mt-4">
+                                        <Icon name="alert-triangle" size={14} /> Member 4: Healer Intervention
+                                    </h3>
+                                    <div className="bg-brand-warning/5 border border-brand-warning/20 rounded-lg p-4">
+                                        <div className="grid grid-cols-2 gap-4 mb-4">
+                                            <div>
+                                                <div className="text-[10px] text-slate-500 uppercase mb-1 font-semibold tracking-wider">Failure Reason</div>
+                                                <div className="text-sm text-red-400 font-medium">{scenario.recovery.reason}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-[10px] text-slate-500 uppercase mb-1 font-semibold tracking-wider">Retry Count</div>
+                                                <div className="text-sm text-brand-warning font-mono">{scenario.recovery.count} / 3</div>
+                                            </div>
+                                        </div>
+                                        <div className="bg-[#090D16] border border-brand-warning/20 rounded p-3">
+                                            <div className="text-[10px] text-slate-500 uppercase mb-2 font-semibold tracking-wider flex justify-between">
+                                                <span>Strategy Selected</span>
+                                                <span className="text-brand-warning">{scenario.recovery.strategy}</span>
+                                            </div>
+                                            <div className="text-sm text-slate-300 font-mono border-t border-slate-800 pt-2">{scenario.recovery.mitigation}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                        </div>
+                    </div>
+
+                    {/* Footer Metrics */}
+                    <footer className="h-16 glass-panel border-t grid grid-cols-4 divide-x divide-slate-800 shrink-0 z-10 relative">
+                        <div className="flex flex-col justify-center px-6">
+                            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Overall Status</span>
+                            <span className={`text-sm font-bold ${
+                                currentLogIndex === 0 ? 'text-slate-400' :
+                                !isPlaying && scenario.metrics.status.includes('SUCCESS') ? 'text-brand-success' :
+                                !isPlaying && scenario.metrics.status.includes('FAILED') ? 'text-brand-danger' :
+                                'text-brand-primary animate-pulse'
+                            }`}>
+                                {currentLogIndex === 0 ? 'READY' : (isPlaying ? 'EXECUTING...' : scenario.metrics.status)}
+                            </span>
+                        </div>
+                        <div className="flex flex-col justify-center px-6">
+                            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Steps Executed</span>
+                            <span className="text-sm font-bold text-white font-mono">{currentLogIndex === 0 ? '0 / 0' : (isPlaying ? '- / -' : scenario.metrics.steps)}</span>
+                        </div>
+                        <div className="flex flex-col justify-center px-6">
+                            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Retry Count</span>
+                            <span className="text-sm font-bold text-brand-warning font-mono">{currentLogIndex === 0 ? '0 / 3' : (isPlaying ? '- / 3' : scenario.metrics.retries)}</span>
+                        </div>
+                        <div className="flex flex-col justify-center px-6">
+                            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Integrity Score</span>
+                            <span className="text-sm font-bold text-brand-secondary font-mono">{currentLogIndex === 0 ? '---' : (isPlaying ? '---' : scenario.metrics.integrity)}</span>
+                        </div>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<Dashboard />);
+    </script>
+</body>
+</html>
